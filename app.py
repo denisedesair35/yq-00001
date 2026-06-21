@@ -131,23 +131,45 @@ def log_operation(user_id, user_name, operation_type, target_type=None, target_i
         app.logger.error(f"日志记录失败: {e}")
 
 
+def get_current_user():
+    if hasattr(request, '_cached_user'):
+        return request._cached_user
+    user_id = getattr(request, 'user_id', None)
+    if not user_id:
+        return None
+    conn = get_db()
+    user = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+    conn.close()
+    request._cached_user = user
+    return user
+
+
+def is_admin_role():
+    user = get_current_user()
+    return user is not None and user['role'] == 'admin'
+
+
 def require_login(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         user_id = request.headers.get('X-User-Id')
-        user_role = request.headers.get('X-User-Role')
         if not user_id:
             data = request.get_json(silent=True)
             if data:
                 user_id = data.get('user_id')
-                user_role = data.get('user_role')
         if not user_id:
             user_id = request.args.get('user_id')
-            user_role = request.args.get('user_role')
         if not user_id:
             return jsonify({'success': False, 'msg': '请先登录'}), 401
-        request.user_id = int(user_id)
-        request.user_role = user_role
+        try:
+            request.user_id = int(user_id)
+        except ValueError:
+            return jsonify({'success': False, 'msg': '无效的用户标识'}), 401
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'msg': '用户不存在，请重新登录'}), 401
+        request.user_role = user['role']
+        request.user_name = user['username']
         return f(*args, **kwargs)
     return decorated
 
@@ -156,16 +178,14 @@ def require_admin(f):
     @wraps(f)
     @require_login
     def decorated(*args, **kwargs):
-        if request.user_role != 'admin':
+        if not is_admin_role():
             return jsonify({'success': False, 'msg': '需要管理员权限'}), 403
         return f(*args, **kwargs)
     return decorated
 
 
 def get_current_user_info():
-    conn = get_db()
-    user = conn.execute('SELECT * FROM users WHERE id = ?', (request.user_id,)).fetchone()
-    conn.close()
+    user = get_current_user()
     return user
 
 
