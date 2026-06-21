@@ -392,6 +392,69 @@ body {
 .empty-state .empty-icon { font-size: 48px; margin-bottom: 10px; opacity: 0.5; }
 .empty-state p { font-size: 14px; }
 
+.logs-list { display: flex; flex-direction: column; gap: 10px; }
+.log-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: white;
+  transition: all 0.2s;
+}
+.log-card:hover {
+  border-color: #c7d2fe;
+  background: #fafbff;
+}
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.log-user {
+  font-size: 14px;
+  color: #374151;
+  font-weight: 500;
+  margin-left: 8px;
+}
+.log-time {
+  font-size: 12px;
+  color: #9ca3af;
+}
+.log-detail {
+  font-size: 13px;
+  color: #4b5563;
+  padding: 6px 10px;
+  background: #f9fafb;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  line-height: 1.6;
+}
+.log-footer {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.op-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.op-login { background: #dbeafe; color: #1e40af; }
+.op-register { background: #cffafe; color: #155e75; }
+.op-create { background: #dcfce7; color: #166534; }
+.op-status { background: #fef3c7; color: #92400e; }
+.op-apply { background: #e0e7ff; color: #3730a3; }
+.op-approve { background: #d1fae5; color: #065f46; }
+.op-reject { background: #fee2e2; color: #991b1b; }
+.op-return { background: #ccfbf1; color: #115e59; }
+.op-default { background: #f3f4f6; color: #374151; }
+
 @media (max-width: 640px) {
   .header .container { flex-direction: column; gap: 10px; }
   .filters input { min-width: 100%; }

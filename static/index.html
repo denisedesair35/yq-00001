@@ -24,6 +24,7 @@
         <button class="tab active" data-tab="tools" onclick="switchTab('tools')">🔧 工具大厅</button>
         <button class="tab" data-tab="register" onclick="switchTab('register')">📝 登记工具</button>
         <button class="tab" data-tab="borrows" onclick="switchTab('borrows')">📋 借还管理</button>
+        <button class="tab" data-tab="logs" onclick="switchTab('logs')">📝 操作记录</button>
         <button class="tab" data-tab="dashboard" onclick="switchTab('dashboard')">📊 数据概览</button>
       </div>
     </div>
@@ -113,6 +114,23 @@
           <button class="btn btn-danger" id="overdueBtn" onclick="showOverdueList()">查看逾期清单</button>
         </div>
         <div id="borrowsList" class="records-list"></div>
+      </div>
+    </section>
+
+    <section id="tab-logs" class="tab-content">
+      <div class="panel">
+        <h2>📝 操作记录</h2>
+        <div class="filters">
+          <select id="logFilterType" onchange="loadOperationLogs()">
+            <option value="">全部操作类型</option>
+          </select>
+          <select id="logFilterUser" onchange="loadOperationLogs()">
+            <option value="">全部用户</option>
+          </select>
+          <input type="text" id="logFilterKeyword" placeholder="搜索用户名/详情..." oninput="loadOperationLogs()">
+          <button class="btn" onclick="document.getElementById('logFilterType').value='';document.getElementById('logFilterUser').value='';document.getElementById('logFilterKeyword').value='';loadOperationLogs();">重置筛选</button>
+        </div>
+        <div id="logsList" class="logs-list"></div>
       </div>
     </section>
 

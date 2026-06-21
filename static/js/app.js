@@ -2,16 +2,36 @@ const API = '/api';
 let currentUser = null;
 let categories = [];
 let statusMap = { tool: {}, borrow: {} };
+let operationTypes = {};
+let userList = [];
 let currentBorrowTool = null;
 let currentApproveRecord = null;
 let currentStatusTool = null;
 
 async function http(url, options = {}) {
-  const opts = { headers: { 'Content-Type': 'application/json' }, ...options };
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (currentUser) {
+    headers['X-User-Id'] = currentUser.id;
+    headers['X-User-Role'] = currentUser.role;
+  }
+  const opts = { headers, ...options };
   if (opts.body && typeof opts.body === 'object') opts.body = JSON.stringify(opts.body);
   try {
     const res = await fetch(API + url, opts);
-    return await res.json();
+    const data = await res.json();
+    if (res.status === 401) {
+      showToast('请先登录', 'error');
+      showLogin();
+      return { success: false, msg: '未登录' };
+    }
+    if (res.status === 403) {
+      showToast(data.msg || '权限不足', 'error');
+      return { success: false, msg: data.msg || '权限不足' };
+    }
+    if (!res.ok && !data.success) {
+      showToast(data.msg || '请求失败', 'error');
+    }
+    return data;
   } catch (e) {
     showToast('网络错误: ' + e.message, 'error');
     return { success: false, msg: e.message };
@@ -37,6 +57,7 @@ function switchTab(name) {
   if (name === 'tools') loadTools();
   else if (name === 'borrows') loadBorrows();
   else if (name === 'dashboard') loadDashboard();
+  else if (name === 'logs') loadOperationLogs();
   else if (name === 'register') { initFormCategories(); }
 }
 
@@ -51,6 +72,22 @@ function statusClassBorrow(s) {
 }
 function statusTextBorrow(s) {
   return statusMap.borrow[s] || s;
+}
+
+function updateTabsVisibility() {
+  const tabBorrows = document.querySelector('[data-tab="borrows"]');
+  const tabDashboard = document.querySelector('[data-tab="dashboard"]');
+  const tabLogs = document.querySelector('[data-tab="logs"]');
+  if (tabDashboard) tabDashboard.style.display = isAdmin() ? '' : 'none';
+  if (currentUser) {
+    if (tabBorrows) tabBorrows.style.display = '';
+    if (tabLogs) tabLogs.style.display = '';
+  } else {
+    if (tabBorrows) tabBorrows.style.display = 'none';
+    if (tabLogs) tabLogs.style.display = 'none';
+  }
+  const overdueBtn = document.getElementById('overdueBtn');
+  if (overdueBtn) overdueBtn.style.display = isAdmin() ? '' : 'none';
 }
 
 function showLogin() {
@@ -68,9 +105,11 @@ async function doLogin() {
     currentUser = res.user;
     localStorage.setItem('tool_user', JSON.stringify(currentUser));
     updateUserDisplay();
+    updateTabsVisibility();
     closeModal('loginModal');
     showToast('登录成功', 'success');
     loadTools();
+    if (isAdmin()) loadUserList();
   } else {
     showToast(res.msg || '登录失败', 'error');
   }
@@ -99,6 +138,19 @@ function initFormCategories() {
   const filter = document.getElementById('filterCategory');
   filter.innerHTML = '<option value="">全部分类</option>' +
     categories.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('toolOwner').value = currentUser ? currentUser.username : '';
+}
+
+async function loadUserList() {
+  const res = await http('/users');
+  if (Array.isArray(res)) {
+    userList = res;
+    const sel = document.getElementById('logFilterUser');
+    if (sel) {
+      sel.innerHTML = '<option value="">全部用户</option>' +
+        userList.map(u => `<option value="${u.id}">${escapeHtml(u.username)}</option>`).join('');
+    }
+  }
 }
 
 async function submitTool(e) {
@@ -134,7 +186,7 @@ async function loadTools() {
   if (st) q.set('status', st);
   const list = await http('/tools' + (q.toString() ? '?' + q.toString() : ''));
   const container = document.getElementById('toolsList');
-  if (!list.length) {
+  if (!Array.isArray(list) || !list.length) {
     container.innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div><p>暂无工具，点击"登记新工具"来添加第一个共享工具吧~</p></div>`;
     return;
   }
@@ -206,6 +258,7 @@ async function submitBorrow() {
 }
 
 async function loadBorrows() {
+  if (!ensureLogin()) return;
   const status = document.getElementById('borrowFilter').value;
   const onlyMine = document.getElementById('onlyMyBorrows').checked;
   const q = new URLSearchParams();
@@ -213,7 +266,7 @@ async function loadBorrows() {
   if (onlyMine && currentUser) q.set('borrower_id', currentUser.id);
   const list = await http('/borrows' + (q.toString() ? '?' + q.toString() : ''));
   const container = document.getElementById('borrowsList');
-  if (!list.length) {
+  if (!Array.isArray(list) || !list.length) {
     container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><p>暂无借还记录</p></div>`;
     return;
   }
@@ -257,8 +310,9 @@ function renderRecord(r) {
 }
 
 async function openApproveModal(recordId) {
+  if (!ensureLogin()) return;
   const list = await http('/borrows');
-  const r = list.find(x => x.id === recordId);
+  const r = Array.isArray(list) ? list.find(x => x.id === recordId) : null;
   if (!r) { showToast('记录不存在', 'error'); return; }
   currentApproveRecord = r;
   document.getElementById('approveInfo').innerHTML = `
@@ -304,6 +358,7 @@ async function doReject() {
 }
 
 async function confirmReturn(recordId) {
+  if (!ensureLogin()) return;
   if (!confirm('确认该工具已归还？')) return;
   const res = await http(`/borrows/${recordId}/return`, { method: 'POST' });
   if (res.success) {
@@ -316,9 +371,10 @@ async function confirmReturn(recordId) {
 }
 
 async function showOverdueList() {
+  if (!ensureLogin()) return;
   const list = await http('/borrows?only_overdue=1');
   const container = document.getElementById('overdueList');
-  if (!list.length) {
+  if (!Array.isArray(list) || !list.length) {
     container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎉</div><p>暂无逾期记录，一切正常！</p></div>`;
   } else {
     container.innerHTML = list.map(r => renderRecord(r)).join('');
@@ -327,6 +383,7 @@ async function showOverdueList() {
 }
 
 async function openStatusModal(toolId) {
+  if (!ensureLogin()) return;
   const tool = await http('/tools/' + toolId);
   if (!tool || tool.id === undefined) { showToast('工具不存在', 'error'); return; }
   currentStatusTool = tool;
@@ -353,7 +410,13 @@ async function doChangeStatus() {
 }
 
 async function loadDashboard() {
+  if (!isAdmin()) {
+    showToast('需要管理员权限', 'error');
+    switchTab('tools');
+    return;
+  }
   const d = await http('/dashboard');
+  if (!d || d.success === false) return;
   const cards = [
     { label: '工具总数', value: d.tool_total, icon: '📦', color: 'linear-gradient(135deg,#667eea,#764ba2)' },
     { label: '可用工具', value: d.tool_available, icon: '✅', color: 'linear-gradient(135deg,#10b981,#059669)' },
@@ -374,6 +437,61 @@ async function loadDashboard() {
   `).join('');
 }
 
+function initLogFilters() {
+  const typeSel = document.getElementById('logFilterType');
+  if (typeSel && operationTypes && Object.keys(operationTypes).length) {
+    typeSel.innerHTML = '<option value="">全部操作类型</option>' +
+      Object.entries(operationTypes).map(([k, v]) => `<option value="${k}">${escapeHtml(v)}</option>`).join('');
+  }
+}
+
+function opTypeClass(type) {
+  const map = {
+    user_login: 'op-login',
+    user_register: 'op-register',
+    tool_create: 'op-create',
+    tool_status_change: 'op-status',
+    borrow_apply: 'op-apply',
+    borrow_approve: 'op-approve',
+    borrow_reject: 'op-reject',
+    borrow_return: 'op-return'
+  };
+  return 'op-badge ' + (map[type] || 'op-default');
+}
+
+async function loadOperationLogs() {
+  if (!ensureLogin()) return;
+  const opType = document.getElementById('logFilterType').value;
+  const userId = document.getElementById('logFilterUser').value;
+  const keyword = document.getElementById('logFilterKeyword').value;
+  const q = new URLSearchParams();
+  if (opType) q.set('operation_type', opType);
+  if (userId) q.set('user_id', userId);
+  if (keyword) q.set('keyword', keyword);
+  const list = await http('/operation-logs' + (q.toString() ? '?' + q.toString() : ''));
+  const container = document.getElementById('logsList');
+  if (!Array.isArray(list) || !list.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📝</div><p>暂无操作记录</p></div>`;
+    return;
+  }
+  container.innerHTML = list.map(log => `
+    <div class="log-card">
+      <div class="log-header">
+        <div>
+          <span class="${opTypeClass(log.operation_type)}">${escapeHtml(log.operation_type_text)}</span>
+          <span class="log-user">👤 ${escapeHtml(log.user_name)}</span>
+        </div>
+        <span class="log-time">${log.created_at || ''}</span>
+      </div>
+      <div class="log-detail">${escapeHtml(log.detail || '-')}</div>
+      <div class="log-footer">
+        <span>ID: #${log.id}</span>
+        ${log.target_type ? `<span>目标: ${log.target_type} #${log.target_id || ''}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
 function escapeHtml(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -383,7 +501,9 @@ async function init() {
   try {
     categories = await http('/categories');
     statusMap = await http('/status-map');
+    operationTypes = await http('/operation-types');
     initFormCategories();
+    initLogFilters();
   } catch (e) { console.error(e); }
 
   const saved = localStorage.getItem('tool_user');
@@ -391,6 +511,8 @@ async function init() {
     try {
       currentUser = JSON.parse(saved);
       updateUserDisplay();
+      updateTabsVisibility();
+      if (isAdmin()) loadUserList();
     } catch (e) {}
   }
   if (!currentUser) {
